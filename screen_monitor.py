@@ -642,76 +642,57 @@ class ScreenMonitorApp(ctk.CTk):
             return None
             
     def extract_orange_text(self, image):
-        """Extract text that has orange/yellow colored text from the image"""
+        """Extract text that has orange colored text from the image"""
         try:
             img_array = np.array(image)
             from PIL import ImageOps
             
-            # Check minimum size
             if img_array.shape[0] < 5 or img_array.shape[1] < 5:
                 return None
             
             r, g, b = img_array[:,:,0].astype(float), img_array[:,:,1].astype(float), img_array[:,:,2].astype(float)
             
-            # Orange-yellow text detection (like "8191" "8192")
-            orange_yellow_mask = (
-                (r >= 170) &           
-                (g >= 80) &           
-                (g <= 220) &           
-                (b <= 130) &           
-                (r > b + 50) &         
-                (r >= g - 50)          
+            # Target color: #FD8C5E = RGB(253, 140, 94)
+            # With tolerance of ~40 for each channel
+            orange_mask = (
+                (r >= 210) & (r <= 255) &    # Red: 253 ± 43
+                (g >= 100) & (g <= 180) &    # Green: 140 ± 40
+                (b >= 50) & (b <= 140)       # Blue: 94 ± 46
             )
-            
-            # Brighter orange
-            bright_orange_mask = (
-                (r >= 190) &
-                (g >= 70) & (g <= 210) &
-                (b <= 110)
-            )
-            
-            # Combine masks
-            combined_mask = orange_yellow_mask | bright_orange_mask
             
             # Create binary image
             result = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=np.uint8)
-            result[combined_mask] = 255
+            result[orange_mask] = 255
             
             # Convert to PIL Image
             filtered_image = Image.fromarray(result)
             
-            # Scale up for better OCR
+            # Scale up for OCR
             width, height = filtered_image.size
-            scale = 4
-            new_width = max(width * scale, 20)
-            new_height = max(height * scale, 20)
-            filtered_image = filtered_image.resize((new_width, new_height), Image.Resampling.NEAREST)
+            scale = 5
+            filtered_image = filtered_image.resize((width * scale, height * scale), Image.Resampling.LANCZOS)
             
-            # Invert for OCR (black text on white)
+            # Invert for OCR
             filtered_image = ImageOps.invert(filtered_image)
             
-            # OCR configurations
+            # OCR
             configs = [
                 r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789',
-                r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789', 
-                r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789',
+                r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789',
             ]
             
-            best_result = None
             for config in configs:
                 try:
-                    text = pytesseract.image_to_string(filtered_image, config=config)
-                    numbers = re.findall(r'\d+', text)
-                    if numbers:
-                        longest = max(numbers, key=len)
-                        if best_result is None or len(longest) > len(best_result):
-                            best_result = longest
+                    text = pytesseract.image_to_string(filtered_image, config=config).strip()
+                    if text:
+                        numbers = re.findall(r'\d+', text)
+                        if numbers:
+                            return max(numbers, key=len)
                 except:
                     continue
             
-            return best_result
-        except Exception as e:
-            print(f"Extract error: {e}")
+            return None
+        except:
             return None
         
     def capture_zone(self):
